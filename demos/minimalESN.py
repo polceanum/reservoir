@@ -14,7 +14,7 @@ trainLen = 2000
 testLen = 2000
 initLen = 100
 
-data = loadtxt('MackeyGlass_t17.txt')
+data = loadtxt('../data/MackeyGlass_t17.txt')
 
 # plot some of it
 figure(10).clear()
