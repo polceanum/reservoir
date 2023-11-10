@@ -4,6 +4,7 @@ A minimalistic Echo State Networks demo with Mackey-Glass (delay 17) data
 in "plain" scientific Python.
 by Mantas LukoÅ¡eviÄ?ius 2012
 http://minds.jacobs-university.de/mantas
+Update: https://mantas.info/code/simple_esn/ (MIT License)
 """
 from numpy import *
 from matplotlib.pyplot import *
