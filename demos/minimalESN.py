@@ -35,7 +35,7 @@ W = random.rand(resSize,resSize)-0.5
 # Option 2 - normalizing and setting spectral radius (correct, slow):
 print('Computing spectral radius...')
 rhoW = max(abs(linalg.eig(W)[0]))
-print('done.')
+print('done:', rhoW)
 W *= 1.25 / rhoW
 
 # allocated memory for the design (collected states) matrix

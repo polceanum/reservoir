@@ -14,7 +14,7 @@ trainLen = 2000
 testLen = 2000
 initLen = 100
 
-data = loadtxt('MackeyGlass_t17.txt')
+data = loadtxt('../data/MackeyGlass_t17.txt')
 
 # plot some of it
 figure(10).clear()
@@ -23,7 +23,7 @@ title('A sample of data')
 
 # generate the ESN reservoir
 inSize = outSize = 1
-resSize = 28000
+resSize = 2800
 a = 0.7 # leaking rate
 k_connectivity = 10
 sparsity = 1-k_connectivity/resSize
