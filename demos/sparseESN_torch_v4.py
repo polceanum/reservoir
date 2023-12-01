@@ -1,3 +1,4 @@
+import argparse
 import torch
 import numpy as np
 # from adabelief_pytorch import AdaBelief
@@ -100,12 +101,12 @@ def initialize_weights_sparse(resSize, inSize, inInterSize, density, rho=None, d
     Win = (torch.rand(inInterSize, 1 + inSize, dtype=dtype) - 0.5) * 1
 
     # Initialize W as a sparse matrix
-    W_sparse = initialize_reservoir(resSize, density)
+    W_sparse = initialize_reservoir(resSize, density, dtype=dtype)
 
     # Normalize W
     if rho is None:
         W_dense = W_sparse.to_dense()
-        rhoW = torch.max(torch.abs(torch.linalg.eigvals(W_dense))).item()
+        rhoW = torch.max(torch.abs(torch.linalg.eigvals(W_dense))).to(dtype=dtype).item()
     else:
         rhoW = rho
     W_sparse = W_sparse * (1.25 / rhoW)
@@ -116,7 +117,7 @@ def run_reservoir_sparse(data, Win, W_sparse, trainLen, initLen, resSize, a, dty
     print('Running reservoir...')
     X = torch.zeros((1 + inSize + resSize, trainLen - initLen), dtype=dtype)
     x = torch.zeros((resSize, 1), dtype=dtype)
-    Win_padding = torch.zeros((resSize-Win.shape[0], Win.shape[1]-1))
+    Win_padding = torch.zeros((resSize-Win.shape[0], Win.shape[1]-1), dtype=dtype)
     for t in tqdm(range(trainLen)):
         u = data[t]
         Win_out = Win @ torch.vstack((torch.tensor([1.0], dtype=dtype), u.view(1, 1)))
@@ -192,6 +193,11 @@ def plot_results(data, Y, X, model, r_out_size, trainLen, testLen):
     show()
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-fp', type=int, default=64, choices=[16, 32, 64], help='float precision')
+    parser.add_argument('-opt', type=int, default='gd', choices=['gd', 'lr'], help='optimisation')
+    args = parser.parse_args()
+
     torch.manual_seed(42)
     global inSize, outSize, resSize
     inSize = outSize = 1
@@ -203,15 +209,15 @@ def main():
     initLen = 100
     errorLen = 500
     learning_rate = 0.001
-    epochs = 50000
+    epochs = 10000
     density = 0.1
     inInterSize = 1000
     outInterSize = 1000
-    dtype = torch.float64
+    dtype = {64:torch.float64, 32:torch.float32, 16:torch.float16}[args.fp]
 
-    data = load_data('../data/MackeyGlass_t17.txt')
-    Win, W = initialize_weights_sparse(resSize, inSize, inInterSize, density, rho=estimate_rho(resSize, density, dtype=dtype))
-    X, final_x_state = run_reservoir_sparse(data, Win, W, trainLen, initLen, resSize, a)
+    data = load_data('../data/MackeyGlass_t17.txt', dtype=dtype)
+    Win, W = initialize_weights_sparse(resSize, inSize, inInterSize, density, rho=estimate_rho(resSize, density, dtype=dtype), dtype=dtype)
+    X, final_x_state = run_reservoir_sparse(data, Win, W, trainLen, initLen, resSize, a, dtype=dtype)
     Yt = data[None, initLen + 1:trainLen + 1].clone().detach().to(dtype=dtype).T
 
     # Choose one of the training methods
@@ -219,7 +225,7 @@ def main():
     # model = train_output(X, Yt, inSize, outInterSize, reg)
     model = train_output_with_gd(X, Yt, inSize, outInterSize, learning_rate, epochs, dtype=dtype)
 
-    Y = run_generative_mode(data, model, Win, W, outInterSize, testLen, trainLen, a, final_x_state)
+    Y = run_generative_mode(data, model, Win, W, outInterSize, testLen, trainLen, a, final_x_state, dtype=dtype)
     mse = compute_mse(data, Y, trainLen, errorLen)
 
     print('MSE =', mse)
