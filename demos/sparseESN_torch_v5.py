@@ -1,30 +1,11 @@
 import argparse
 import torch
 import numpy as np
-# from adabelief_pytorch import AdaBelief
-from matplotlib.pyplot import *
-import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
+import networkx as nx
 from tqdm import tqdm
 
-def plot_power_law(x, y, a, b):
-    # Generate a range of x values for plotting the power law curve
-    x_range = np.linspace(min(x), max(x), 100)
-    y_range = a * x_range ** b
-
-    # Plot the original data points
-    plt.scatter(x, y, color='blue', label='Original Data Points + extrapolation')
-
-    # Plot the power law curve
-    plt.plot(x_range, y_range, color='red', label=f'Estimated Power Law (y = {a:.2f}x^{b:.2f})')
-
-    # Additional plot settings
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.title('Power Law Estimation')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+from plot_utils import plot_results, plot_power_law, plot_geometric_graph
 
 # Neural Network Definition
 class SimpleNN(torch.nn.Module):
@@ -69,20 +50,44 @@ def estimate_power_law(x, y):
 
     return a, b
 
-def initialize_reservoir(resSize, density, dtype=torch.float64, csr=True):
-    indices = torch.randint(0, resSize, (2, int(resSize**2 * density)), dtype=torch.long)
-    values = (torch.rand(int(resSize**2 * density), dtype=dtype) - 0.5)
-    W_sparse = torch.sparse_coo_tensor(indices, values, (resSize, resSize), dtype=dtype)
+def initialize_reservoir(resSize, density, topology, dtype=torch.float64, csr=True, allow_plot=False):
+    dtype2tensor = {torch.float16:torch.HalfTensor, torch.float32:torch.FloatTensor, torch.float64:torch.DoubleTensor}
+    dtype2sparsetensor = {torch.float16:torch.sparse.HalfTensor, torch.float32:torch.sparse.FloatTensor, torch.float64:torch.sparse.DoubleTensor}
+
+    if topology == 'uniform':
+        indices = torch.randint(0, resSize, (2, int(resSize**2 * density)), dtype=torch.long)
+        values = (torch.rand(int(resSize**2 * density), dtype=dtype) - 0.5)
+        W_sparse = torch.sparse_coo_tensor(indices, values, (resSize, resSize), dtype=dtype)
+    elif topology == 'geometric':
+        G = nx.thresholded_random_geometric_graph(resSize, 0.05, 0.0001)
+        A = nx.to_scipy_sparse_array(G, format='coo')
+
+        idx = torch.LongTensor(np.vstack((A.row, A.col)))
+        val = dtype2tensor[dtype](A.data)
+        shape = A.shape
+        W_sparse = dtype2sparsetensor[dtype](idx, val, torch.Size(shape))
+
+        if allow_plot: plot_geometric_graph(G)
+    elif topology == 'smallworld':
+        G = nx.navigable_small_world_graph(resSize, p=3)
+        A = nx.to_scipy_sparse_array(G, format='coo')
+
+        idx = torch.LongTensor(np.vstack((A.row, A.col)))
+        val = dtype2tensor[dtype](A.data)
+        shape = A.shape
+        W_sparse = dtype2sparsetensor[dtype](idx, val, torch.Size(shape))
+
+        if allow_plot: plot_geometric_graph(G)
     if csr: W_sparse = W_sparse.to_sparse_csr()
     return W_sparse
 
-def estimate_rho(resSize, density, dtype=torch.float64):
+def estimate_rho(resSize, density, topology, dtype=torch.float64, allow_plot=False):
     print('Estimating rho for reservoir of size', resSize, '...')
-    # x = np.array([100, 300, 600, 900, 1000], dtype=int)
-    x = torch.from_numpy(np.array([1000, 1200, 1400, 1600], dtype=int))
+    # x = torch.from_numpy(np.array([1000, 1500, 2000, 2500, 3000], dtype=int))
+    x = torch.from_numpy(np.array([1000, 1250, 1500, 1750, 2000], dtype=int))
     y = torch.empty(x.shape, dtype=dtype)
     for i in range(len(x)):
-        W_sparse = initialize_reservoir(x[i], density)
+        W_sparse = initialize_reservoir(x[i], density, topology, allow_plot=allow_plot)
         W_dense = W_sparse.to_dense()
         rhoW = torch.max(torch.abs(torch.linalg.eigvals(W_dense))).item()
         y[i] = rhoW
@@ -93,16 +98,15 @@ def estimate_rho(resSize, density, dtype=torch.float64):
 
     rho = a*(resSize**b)
 
-    # plot_power_law(np.concatenate([x, [resSize]]), np.concatenate([y, np.array([rho], dtype=dtype)]), a, b)
+    if allow_plot: plot_power_law(np.concatenate([x, [resSize]]), np.concatenate([y, np.array([rho])]), a, b)
 
-    print('done:', rho)
     return rho
 
-def initialize_weights_sparse(resSize, inSize, inInterSize, density, rho=None, dtype=torch.float64):
+def initialize_weights_sparse(resSize, inSize, inInterSize, density, topology, rho=None, dtype=torch.float64):
     Win = (torch.rand(inInterSize, 1 + inSize, dtype=dtype) - 0.5) * 1
 
     # Initialize W as a sparse matrix
-    W_sparse = initialize_reservoir(resSize, density, dtype=dtype)
+    W_sparse = initialize_reservoir(resSize, density, topology, dtype=dtype, allow_plot=True)
 
     # Normalize W
     if rho is None:
@@ -186,36 +190,17 @@ def run_generative_mode(data, model, Win, W, r_out_size, testLen, trainLen, a, i
         u = y
     return Y
 
-
 def compute_mse(data, Y, trainLen, errorLen):
     return torch.mean((data[trainLen + 1:trainLen + errorLen + 1] - Y[0, 0:errorLen]) ** 2).item()
 
-def plot_results(data, Y, X, model, r_out_size, trainLen, testLen, args):
-    figure(1).clear()
-    plot(data[trainLen + 1:trainLen + testLen + 1].numpy(), 'g')
-    plot(torch.clip(Y.T.detach(), -10, 10).numpy(), 'b') # clip to ignore extremely large values when plotting
-    title('Target and generated signals $y(n)$ starting at $n=0$')
-    legend(['Target signal', 'Free-running predicted signal'])
-
-    figure(2).clear()
-    plot(X[0:20, 0:200].T.numpy())
-    title('Some reservoir activations $\\mathbf{x}(n)$')
-
-    figure(3).clear()
-    if args.opt == 'lr':
-        bar(range(1 + inSize + r_out_size), model.numpy().squeeze())
-    else:
-        bar(range(1 + inSize + r_out_size), model.linear.weight.detach().numpy().squeeze())
-    
-    title('Output weights $\\mathbf{W}^{out}$')
-
-    show()
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-fp', type=int, default=64, choices=[16, 32, 64], help='float precision')
     parser.add_argument('-lr', type=float, default=0.001, help='learning rate')
     parser.add_argument('-opt', type=str, default='adam', choices=['adam', 'adamw', 'adagrad', 'rprop', 'rmsprop', 'lr'], help='optimisation')
+    parser.add_argument('-top', type=str, default='geometric', choices=['uniform', 'geometric', 'smallworld'], help='reservoir topology')
+    parser.add_argument('-rest', action='store_true', help='reservoir spectral radius estimation')
     args = parser.parse_args()
 
     torch.manual_seed(42)
@@ -236,7 +221,8 @@ def main():
     dtype = {64:torch.float64, 32:torch.float32, 16:torch.float16}[args.fp]
 
     data = load_data('../data/MackeyGlass_t17.txt', dtype=dtype)
-    Win, W = initialize_weights_sparse(resSize, inSize, inInterSize, density, rho=estimate_rho(resSize, density, dtype=dtype), dtype=dtype)
+
+    Win, W = initialize_weights_sparse(resSize, inSize, inInterSize, density, topology=args.top, rho=(estimate_rho(resSize, density, topology=args.top, dtype=dtype) if args.rest else None), dtype=dtype)
     X, final_x_state = run_reservoir_sparse(data, Win, W, trainLen, initLen, resSize, a, dtype=dtype)
     Yt = data[None, initLen + 1:trainLen + 1].clone().detach().to(dtype=dtype).T
 
@@ -250,7 +236,7 @@ def main():
     mse = compute_mse(data, Y, trainLen, errorLen)
 
     print('MSE =', mse)
-    plot_results(data, Y, X, model, outInterSize, trainLen, testLen, args)
+    plot_results(data, Y, X, model, inSize, outInterSize, trainLen, testLen, args)
 
 if __name__ == "__main__":
     main()
