@@ -1,0 +1,35 @@
+name: Python CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  run-python:
+    runs-on: self-hosted  # Local runner
+
+    steps:
+      # Check out the repository code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Set up Python
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      # Install dependencies (if requirements.txt exists)
+      - name: Install dependencies
+        run: |
+          pip install -r demos/requirements.txt
+        continue-on-error: true  # Optional, if there's no requirements.txt
+
+      # Run Unit Tests
+      - name: Run Unit Tests
+        run: |
+          python -m unittest discover

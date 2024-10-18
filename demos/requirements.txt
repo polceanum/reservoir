@@ -1,0 +1,6 @@
+torch
+scikit-learn
+numpy==1.25.2
+pybind11>=2.12
+tqdm
+matplotlib
