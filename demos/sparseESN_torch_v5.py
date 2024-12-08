@@ -102,11 +102,11 @@ def estimate_rho(resSize, density, topology, dtype=torch.float64, allow_plot=Fal
 
     return rho
 
-def initialize_weights_sparse(resSize, inSize, inInterSize, density, topology, rho=None, dtype=torch.float64):
+def initialize_weights_sparse(resSize, inSize, inInterSize, density, topology, rho=None, dtype=torch.float64, allow_plot=True):
     Win = (torch.rand(inInterSize, 1 + inSize, dtype=dtype) - 0.5) * 1
 
     # Initialize W as a sparse matrix
-    W_sparse = initialize_reservoir(resSize, density, topology, dtype=dtype, allow_plot=True)
+    W_sparse = initialize_reservoir(resSize, density, topology, dtype=dtype, allow_plot)
 
     # Normalize W
     if rho is None:
@@ -201,6 +201,7 @@ def main():
     parser.add_argument('-opt', type=str, default='adam', choices=['adam', 'adamw', 'adagrad', 'rprop', 'rmsprop', 'lr'], help='optimisation')
     parser.add_argument('-top', type=str, default='geometric', choices=['uniform', 'geometric', 'smallworld'], help='reservoir topology')
     parser.add_argument('-rest', action='store_true', help='reservoir spectral radius estimation')
+    parser.add_argument('-viz', action='store_true', help='plot reservoir information')
     args = parser.parse_args()
 
     torch.manual_seed(42)
@@ -222,7 +223,7 @@ def main():
 
     data = load_data('../data/MackeyGlass_t17.txt', dtype=dtype)
 
-    Win, W = initialize_weights_sparse(resSize, inSize, inInterSize, density, topology=args.top, rho=(estimate_rho(resSize, density, topology=args.top, dtype=dtype) if args.rest else None), dtype=dtype)
+    Win, W = initialize_weights_sparse(resSize, inSize, inInterSize, density, topology=args.top, rho=(estimate_rho(resSize, density, topology=args.top, dtype=dtype) if args.rest else None), dtype=dtype, args.viz)
     X, final_x_state = run_reservoir_sparse(data, Win, W, trainLen, initLen, resSize, a, dtype=dtype)
     Yt = data[None, initLen + 1:trainLen + 1].clone().detach().to(dtype=dtype).T
 
@@ -236,7 +237,8 @@ def main():
     mse = compute_mse(data, Y, trainLen, errorLen)
 
     print('MSE =', mse)
-    plot_results(data, Y, X, model, inSize, outInterSize, trainLen, testLen, args)
+    if args.viz:
+        plot_results(data, Y, X, model, inSize, outInterSize, trainLen, testLen, args)
 
 if __name__ == "__main__":
     main()
