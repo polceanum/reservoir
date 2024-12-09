@@ -196,29 +196,49 @@ def compute_mse(data, Y, trainLen, errorLen):
 
 def main():
     parser = argparse.ArgumentParser()
+
+    # Training
     parser.add_argument('-fp', type=int, default=64, choices=[16, 32, 64], help='float precision')
     parser.add_argument('-lr', type=float, default=0.001, help='learning rate')
     parser.add_argument('-opt', type=str, default='adam', choices=['adam', 'adamw', 'adagrad', 'rprop', 'rmsprop', 'lr'], help='optimisation')
-    parser.add_argument('-top', type=str, default='geometric', choices=['uniform', 'geometric', 'smallworld'], help='reservoir topology')
+    parser.add_argument('-epochs', type=int, default=10000, help='number of epochs')
+
+    # Reservoir
+    parser.add_argument('-top', type=str, default='uniform', choices=['uniform', 'geometric', 'smallworld'], help='reservoir topology')
+    parser.add_argument('-dim-res', type=int, default=1000, help='reservoir size')
+    parser.add_argument('-rho', type=float, default=0.01, help='reservoir density')
+    parser.add_argument('-alpha', type=float, default=0.3, help='reservoir leak rate')
     parser.add_argument('-rest', action='store_true', help='reservoir spectral radius estimation')
+
+    # Valves
+    parser.add_argument('-valve-in', type=int, default=1000, help='input valve size (size of input slice to reservoir)')
+    parser.add_argument('-valve-out', type=int, default=1000, help='output valve size (size of output slice from reservoir)')
+
+    # Data in/out dimensions
+    parser.add_argument('-dim-in', type=int, default=1, help='input size')
+    parser.add_argument('-dim-out', type=int, default=1, help='output size')
+
+    # Visualization
     parser.add_argument('-viz', action='store_true', help='plot reservoir information')
+    
     args = parser.parse_args()
 
     torch.manual_seed(42)
     global inSize, outSize, resSize
-    inSize = outSize = 1
-    resSize = 1000
-    a = 0.3
+    inSize = args.dim_in
+    outSize = args.dim_out
+    resSize = args.dim_res
+    a = args.alpha
     reg = 1e-8
     trainLen = 2000
     testLen = 2000
     initLen = 100
     errorLen = 500
     learning_rate = args.lr
-    epochs = 10000
-    density = 0.1
-    inInterSize = 1000
-    outInterSize = 1000
+    epochs = args.epochs
+    density = args.rho
+    inInterSize = args.valve_in
+    outInterSize = args.valve_out
     dtype = {64:torch.float64, 32:torch.float32, 16:torch.float16}[args.fp]
 
     data = load_data('../data/MackeyGlass_t17.txt', dtype=dtype)
