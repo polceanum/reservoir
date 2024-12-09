@@ -106,7 +106,7 @@ def initialize_weights_sparse(resSize, inSize, inInterSize, density, topology, r
     Win = (torch.rand(inInterSize, 1 + inSize, dtype=dtype) - 0.5) * 1
 
     # Initialize W as a sparse matrix
-    W_sparse = initialize_reservoir(resSize, density, topology, dtype=dtype, allow_plot)
+    W_sparse = initialize_reservoir(resSize, density, topology, dtype=dtype, allow_plot=allow_plot)
 
     # Normalize W
     if rho is None:
@@ -150,7 +150,7 @@ def train_output_with_gd(X, Yt, input_size, r_out_size, learning_rate, epochs, a
     
     if args.opt == 'adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, amsgrad=True)
-    if args.opt == 'adamw':
+    elif args.opt == 'adamw':
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, amsgrad=True)
     elif args.opt == 'adagrad':
         optimizer = torch.optim.Adagrad(model.parameters(), lr=learning_rate)
@@ -223,7 +223,7 @@ def main():
 
     data = load_data('../data/MackeyGlass_t17.txt', dtype=dtype)
 
-    Win, W = initialize_weights_sparse(resSize, inSize, inInterSize, density, topology=args.top, rho=(estimate_rho(resSize, density, topology=args.top, dtype=dtype) if args.rest else None), dtype=dtype, args.viz)
+    Win, W = initialize_weights_sparse(resSize, inSize, inInterSize, density, topology=args.top, rho=(estimate_rho(resSize, density, topology=args.top, dtype=dtype) if args.rest else None), dtype=dtype, allow_plot=args.viz)
     X, final_x_state = run_reservoir_sparse(data, Win, W, trainLen, initLen, resSize, a, dtype=dtype)
     Yt = data[None, initLen + 1:trainLen + 1].clone().detach().to(dtype=dtype).T
 

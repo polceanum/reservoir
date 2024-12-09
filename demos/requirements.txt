@@ -1,6 +1,6 @@
-torch==2.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
-scikit-learn
-numpy==1.25.2
+torch==2.2.2
+scikit-learn==1.5.2
+numpy<2.0
 pybind11>=2.12
 tqdm
-matplotlib
+matplotlib>=3.9.3
