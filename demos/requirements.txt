@@ -1,4 +1,4 @@
-torch
+torch==2.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
 scikit-learn
 numpy==1.25.2
 pybind11>=2.12
