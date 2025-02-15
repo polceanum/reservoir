@@ -37,7 +37,7 @@ def plot_results(data, Y, X, model, in_size, r_out_size, trainLen, testLen, args
     figure(3).clear()
     if args.opt == 'lr':
         bar(range(1 + in_size + r_out_size), model.numpy().squeeze())
-    else:
+    elif args.read_out == 'linear':
         bar(range(1 + in_size + r_out_size), model.linear.weight.detach().numpy().squeeze())
     
     title('Output weights $\\mathbf{W}^{out}$')
