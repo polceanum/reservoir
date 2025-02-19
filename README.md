@@ -1,1 +1,1 @@
-# reservoir
+# reservoir: sparsity and scaling experiments
