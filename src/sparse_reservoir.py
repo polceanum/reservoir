@@ -1,6 +1,7 @@
 import argparse
 import torch
 import torch.nn as nn
+import torch.profiler
 import numpy as np
 from sklearn.linear_model import LinearRegression
 import networkx as nx
@@ -214,37 +215,40 @@ def main():
     parser = argparse.ArgumentParser()
 
     # Data file path
-    parser.add_argument('-data-file', type=str, default='../data/MackeyGlass_t17.txt', help='Path to data file')
+    parser.add_argument('--data-file', type=str, default='../data/MackeyGlass_t17.txt', help='Path to data file')
 
     # Training options
-    parser.add_argument('-fp', type=int, default=64, choices=[16, 32, 64], help='float precision')
-    parser.add_argument('-lr', type=float, default=0.001, help='learning rate')
-    parser.add_argument('-opt', type=str, default='adam', choices=['adam', 'adamw', 'adagrad', 'rprop', 'rmsprop', 'lr'], help='optimizer')
-    parser.add_argument('-epochs', type=int, default=10000, help='number of epochs')
+    parser.add_argument('--fp', type=int, default=64, choices=[16, 32, 64], help='float precision')
+    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
+    parser.add_argument('--opt', type=str, default='adam', choices=['adam', 'adamw', 'adagrad', 'rprop', 'rmsprop', 'lr'], help='optimizer')
+    parser.add_argument('--epochs', type=int, default=10000, help='number of epochs')
 
     # Reservoir options
-    parser.add_argument('-top', type=str, default='uniform', choices=['uniform', 'geometric', 'smallworld'], help='reservoir topology')
-    parser.add_argument('-dim-res', type=int, default=1000, help='reservoir size')
-    parser.add_argument('-rho', type=float, default=0.01, help='reservoir density')
-    parser.add_argument('-alpha', type=float, default=0.3, help='reservoir leak rate')
-    parser.add_argument('-rest', action='store_true', help='enable reservoir spectral radius estimation')
+    parser.add_argument('--top', type=str, default='uniform', choices=['uniform', 'geometric', 'smallworld'], help='reservoir topology')
+    parser.add_argument('--dim-res', type=int, default=1000, help='reservoir size')
+    parser.add_argument('--rho', type=float, default=0.01, help='reservoir density')
+    parser.add_argument('--alpha', type=float, default=0.3, help='reservoir leak rate')
+    parser.add_argument('--rest', action='store_true', help='enable reservoir spectral radius estimation')
 
     # Read-out
-    parser.add_argument('-read-out', type=str, default='linear', choices=['linear', 'transformer'], help='readout architecture')
+    parser.add_argument('--read-out', type=str, default='linear', choices=['linear', 'transformer'], help='readout architecture')
 
     # Valve sizes
-    parser.add_argument('-valve-in', type=int, default=1000, help='input valve size')
-    parser.add_argument('-valve-out', type=int, default=1000, help='output valve size')
+    parser.add_argument('--valve-in', type=int, default=1000, help='input valve size')
+    parser.add_argument('--valve-out', type=int, default=1000, help='output valve size')
 
     # Data dimensions
-    parser.add_argument('-dim-in', type=int, default=1, help='input size')
-    parser.add_argument('-dim-out', type=int, default=1, help='output size')
+    parser.add_argument('--dim-in', type=int, default=1, help='input size')
+    parser.add_argument('--dim-out', type=int, default=1, help='output size')
 
     # Visualization
-    parser.add_argument('-viz', action='store_true', help='plot reservoir information')
+    parser.add_argument('--viz', action='store_true', help='plot reservoir information')
 
     # Device option
     parser.add_argument('--device', type=str, default='cpu', help='Device to run the model (e.g. "cpu" or "cuda")')
+
+    # Enable pytorch profiler option
+    parser.add_argument('--profile', action='store_true', help='Enable PyTorch profiling for reservoir and readout training')
 
     args = parser.parse_args()
     device = torch.device(args.device)
@@ -271,13 +275,56 @@ def main():
     rho_value = (estimate_rho(resSize, density, args.top, dtype, device, allow_plot=args.viz)
                  if args.rest else None)
     Win, W = initialize_weights_sparse(resSize, inSize, inInterSize, density, args.top, dtype, device, rho=rho_value, allow_plot=args.viz)
-    X, final_x_state = run_reservoir_sparse(data, Win, W, trainLen, initLen, resSize, a, inSize, dtype, device)
+
+    # --------------------------
+    # Profile Reservoir Run (if enabled)
+    # --------------------------
+    if args.profile:
+        print("Profiling reservoir run...")
+        with torch.profiler.profile(
+            activities=[torch.profiler.ProfilerActivity.CPU,
+                        torch.profiler.ProfilerActivity.CUDA] if device.type == "cuda" else [torch.profiler.ProfilerActivity.CPU],
+            record_shapes=True,
+            with_stack=True
+        ) as prof:
+            X, final_x_state = run_reservoir_sparse(data, Win, W, trainLen, initLen, resSize, a, inSize, dtype, device)
+            prof.step()
+        table = prof.key_averages().table(sort_by="self_cpu_time_total")
+        print(table)
+        reservoir_trace_file = "reservoir_trace.json"
+        prof.export_chrome_trace(reservoir_trace_file)
+        print("Reservoir chrome trace exported to", reservoir_trace_file)
+    else:
+        X, final_x_state = run_reservoir_sparse(data, Win, W, trainLen, initLen, resSize, a, inSize, dtype, device)
+
     Yt = data[initLen + 1: trainLen + 1].clone().detach().to(dtype=dtype, device=device).view(-1, 1)
 
-    if args.opt == 'lr':
-        model = train_output(X, Yt, inSize, outInterSize, reg, dtype, device)
+    # --------------------------
+    # Profile Readout Training (if enabled)
+    # --------------------------
+    if args.profile:
+        print("Profiling readout training...")
+        with torch.profiler.profile(
+            activities=[torch.profiler.ProfilerActivity.CPU,
+                        torch.profiler.ProfilerActivity.CUDA] if device.type == "cuda" else [torch.profiler.ProfilerActivity.CPU],
+            record_shapes=True,
+            with_stack=True
+        ) as prof:
+            if args.opt == 'lr':
+                model = train_output(X, Yt, inSize, outInterSize, reg, dtype, device)
+            else:
+                model = train_output_with_gd(X, Yt, inSize, outInterSize, learning_rate, epochs, args, dtype, device)
+            prof.step()
+        table = prof.key_averages().table(sort_by="self_cpu_time_total")
+        print(table)
+        readout_trace_file = "readout_trace.json"
+        prof.export_chrome_trace(readout_trace_file)
+        print("Readout chrome trace exported to", readout_trace_file)
     else:
-        model = train_output_with_gd(X, Yt, inSize, outInterSize, learning_rate, epochs, args, dtype, device)
+        if args.opt == 'lr':
+            model = train_output(X, Yt, inSize, outInterSize, reg, dtype, device)
+        else:
+            model = train_output_with_gd(X, Yt, inSize, outInterSize, learning_rate, epochs, args, dtype, device)
 
     Y = run_generative_mode(data, model, Win, W, outInterSize, testLen, trainLen, a, final_x_state,
                             args, inSize, outSize, dtype, device)
