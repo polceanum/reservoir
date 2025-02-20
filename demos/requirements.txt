@@ -1,6 +1,0 @@
-torch==2.2.2
-scikit-learn==1.5.2
-numpy<2.0
-pybind11>=2.12
-tqdm
-matplotlib>=3.9.3
