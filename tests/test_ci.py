@@ -46,19 +46,19 @@ class TestModelErrorRegression(unittest.TestCase):
     def test_linear_solver(self):
         test_args = [
             "sparse_reservoir.py",
-            "-data-file", "./data/MackeyGlass_t17.txt",
-            "-fp", "64",
-            "-opt", "lr",
-            "-top", "uniform",
-            "-dim-res", "1000",
-            "-rho", "0.01",       # reservoir density
-            "-alpha", "0.3",      # reservoir leak rate
-            "-rest",             # enable reservoir spectral radius estimation
-            "-read-out", "linear",# linear read-out architecture
-            "-valve-in", "1000",  # input valve size
-            "-valve-out", "1000", # output valve size
-            "-dim-in", "1",
-            "-dim-out", "1",
+            "--data-file", "./data/MackeyGlass_t17.txt",
+            "--fp", "64",
+            "--opt", "lr",
+            "--top", "uniform",
+            "--dim-res", "1000",
+            "--rho", "0.01",       # reservoir density
+            "--alpha", "0.3",      # reservoir leak rate
+            "--rest",             # enable reservoir spectral radius estimation
+            "--read-out", "linear",# linear read-out architecture
+            "--valve-in", "1000",  # input valve size
+            "--valve-out", "1000", # output valve size
+            "--dim-in", "1",
+            "--dim-out", "1",
             "--device", "cpu"
         ]
         expected_threshold = 1e-6
@@ -67,21 +67,21 @@ class TestModelErrorRegression(unittest.TestCase):
     def test_gradient_descent(self):
         test_args = [
             "sparse_reservoir.py",
-            "-data-file", "./data/MackeyGlass_t17.txt",
-            "-fp", "32",
-            "-lr", "0.01",
-            "-opt", "adam",
-            "-epochs", "1000",
-            "-top", "uniform",
-            "-dim-res", "1000",
-            "-rho", "0.01",       # reservoir density
-            "-alpha", "0.3",      # reservoir leak rate
-            "-rest",             # enable reservoir spectral radius estimation
-            "-read-out", "linear",# linear read-out architecture
-            "-valve-in", "1000",  # input valve size
-            "-valve-out", "1000", # output valve size
-            "-dim-in", "1",
-            "-dim-out", "1",
+            "--data-file", "./data/MackeyGlass_t17.txt",
+            "--fp", "32",
+            "--lr", "0.01",
+            "--opt", "adam",
+            "--epochs", "1000",
+            "--top", "uniform",
+            "--dim-res", "1000",
+            "--rho", "0.01",       # reservoir density
+            "--alpha", "0.3",      # reservoir leak rate
+            "--rest",             # enable reservoir spectral radius estimation
+            "--read-out", "linear",# linear read-out architecture
+            "--valve-in", "1000",  # input valve size
+            "--valve-out", "1000", # output valve size
+            "--dim-in", "1",
+            "--dim-out", "1",
             "--device", "cpu"
         ]
         expected_threshold = 0.02
