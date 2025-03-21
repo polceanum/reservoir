@@ -389,6 +389,9 @@ def main():
         print(f"Loaded text data with {data.shape[0]} samples, each of dimension {embedding_dim}.")
     else:
         data = load_data(args.data_file, dtype, device)
+        # Ensure timeseries data is 2D (Nx1) for consistency.
+        if data.ndim == 1:
+            data = data.unsqueeze(1)
 
     inSize = args.dim_in
     outSize = args.dim_out
@@ -437,16 +440,22 @@ def main():
     if args.load_model:
         print("Loading trained model from", args.model_save_path)
         saved = torch.load(args.model_save_path, map_location=device)
-        # Determine readout type from saved dict if available, otherwise use args.opt.
         if isinstance(saved, dict) and 'state_dict' in saved:
-            readout_type = saved['opt'] if 'opt' in saved else args.opt
+            state = saved['state_dict']
+            if 'opt' in saved:
+                readout_type = saved['opt']
+            else:
+                if "linear.weight" in state:
+                    readout_type = "lr"
+                else:
+                    readout_type = "transformer"
             if readout_type == 'lr':
                 model = SimpleNN(1 + inSize + outInterSize, outSize).to(device).to(dtype)
             else:
                 model = SimpleTransformerModel(1 + inSize + outInterSize, outSize).to(device).to(dtype)
-            model.load_state_dict(saved['state_dict'])
+            model.load_state_dict(state)
         else:
-            if args.opt == 'lr':
+            if "linear.weight" in saved:
                 model = SimpleNN(1 + inSize + outInterSize, outSize).to(device).to(dtype)
             else:
                 model = SimpleTransformerModel(1 + inSize + outInterSize, outSize).to(device).to(dtype)
@@ -504,3 +513,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
