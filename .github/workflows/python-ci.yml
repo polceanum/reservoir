@@ -10,7 +10,10 @@ on:
 
 jobs:
   run-python:
-    runs-on: self-hosted  # Local runner
+    strategy:
+      matrix:
+        os: [self-hosted, ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       # Check out the repository code
