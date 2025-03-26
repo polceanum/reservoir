@@ -235,8 +235,9 @@ def main():
 
     # Data file path
     parser.add_argument('--data-file', type=str, default='../data/MackeyGlass_t17.txt', help='Path to data file')
-    # New flag to use Wikipedia dataset with pretrained embeddings
-    parser.add_argument('--use-wiki', action='store_true', help='Use Wikipedia dataset with pretrained embeddings')
+ 
+    parser.add_argument('--dataset', type=str, default='timeseries', choices=['timeseries', 'wikipedia'],
+                        help='Select dataset type: "timeseries" or "wikipedia"')
 
     # Training options
     parser.add_argument('--fp', type=int, default=64, choices=[16, 32, 64], help='float precision')
@@ -259,8 +260,8 @@ def main():
     parser.add_argument('--valve-out', type=int, default=1000, help='output valve size')
 
     # Data dimensions
-    parser.add_argument('--dim-in', type=int, default=1, help='input size (ignored if --use-wiki is set)')
-    parser.add_argument('--dim-out', type=int, default=1, help='output size (ignored if --use-wiki is set)')
+    parser.add_argument('--dim-in', type=int, default=1, help='input size (ignored if --dataset is "wikipedia")')
+    parser.add_argument('--dim-out', type=int, default=1, help='output size (ignored if --dataset is "wikipedia")')
 
     # Visualization
     parser.add_argument('--viz', action='store_true', help='plot reservoir information')
@@ -277,13 +278,12 @@ def main():
     torch.manual_seed(42)
     dtype = {64: torch.float64, 32: torch.float32, 16: torch.float16}[args.fp]
 
-    # Load data: either from file or Wikipedia dataset with pretrained embeddings.
-    if args.use_wiki:
+    # Load data: load Wikipedia data if dataset is wikipedia, else load timeseries data.
+    if args.dataset == "wikipedia":
         print("Loading Wikipedia dataset with pretrained embeddings...")
         tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
         model_emb = AutoModel.from_pretrained("bert-base-uncased").to(device).to(dtype)
         model_emb.eval()
-        # Load a subset (here 5000 samples; adjust as needed)
         data = load_wikipedia_data(tokenizer, model_emb, max_length=128, num_samples=1000).to(dtype=dtype, device=device)
         # Set input and output dimensions to match the embedding size (typically 768 for BERT)
         inSize = data.shape[1]
@@ -297,10 +297,10 @@ def main():
     a = args.alpha
     reg = 1e-8
     # Adjust trainLen, testLen, etc. For Wikipedia, ensure there are enough samples.
-    trainLen = 2000 if not args.use_wiki else min(500, data.shape[0]-1)
-    testLen = 2000 if not args.use_wiki else min(400, data.shape[0]-1)
+    trainLen = 2000 if args.dataset == "timeseries" else min(500, data.shape[0]-1)
+    testLen = 2000 if args.dataset == "timeseries" else min(400, data.shape[0]-1)
     initLen = 100
-    errorLen = 500 if not args.use_wiki else min(100, data.shape[0]-initLen-1)
+    errorLen = 500 if args.dataset == "timeseries" else min(100, data.shape[0]-initLen-1)
     learning_rate = args.lr
     epochs = args.epochs
     density = args.rho
