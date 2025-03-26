@@ -21,6 +21,7 @@ jobs:
       - name: Create and Activate Conda Environment
         shell: bash -l {0}
         run: |
+          source $(conda info --base)/etc/profile.d/conda.sh  # Dynamically source Conda initialization
           conda create -n temp-ci-env python=3.10 -y
           conda activate temp-ci-env
           pip install -r requirements.txt
@@ -29,6 +30,7 @@ jobs:
       - name: Run Unit Tests
         shell: bash -l {0}
         run: |
+          source $(conda info --base)/etc/profile.d/conda.sh  # Dynamically source Conda initialization
           conda activate temp-ci-env
           python -m unittest discover tests
 
@@ -37,4 +39,5 @@ jobs:
         if: always()
         shell: bash -l {0}
         run: |
+          source $(conda info --base)/etc/profile.d/conda.sh  # Dynamically source Conda initialization
           conda remove -n temp-ci-env --all -y
