@@ -24,25 +24,48 @@ def plot_power_law(x, y, a, b):
     plt.show()
 
 def plot_results(data, Y, X, model, in_size, r_out_size, trainLen, testLen, args):
-    figure(1).clear()
-    plot(data[trainLen + 1:trainLen + testLen + 1].numpy(), 'g')
-    plot(torch.clip(Y.T.detach(), -10, 10).numpy(), 'b') # clip to ignore extremely large values when plotting
-    title('Target and generated signals $y(n)$ starting at $n=0$')
-    legend(['Target signal', 'Free-running predicted signal'])
-
-    figure(2).clear()
-    plot(X[0:20, 0:200].T.numpy())
-    title('Some reservoir activations $\\mathbf{x}(n)$')
-
-    figure(3).clear()
-    if args.opt == 'lr':
-        bar(range(1 + in_size + r_out_size), model.numpy().squeeze())
-    elif args.read_out == 'linear':
-        bar(range(1 + in_size + r_out_size), model.linear.weight.detach().numpy().squeeze())
+    plt.figure(1)
+    plt.clf()
     
-    title('Output weights $\\mathbf{W}^{out}$')
+    # Process target signal: if multidimensional, use the first column
+    target = data[trainLen + 1:trainLen + testLen + 1].numpy()
+    if target.ndim > 1:
+        target = target[:, 0]
+    plt.plot(target, 'g', label='Target signal')
+    
+    # Process predicted signal: if multidimensional, use the first column
+    pred = torch.clip(Y.T.detach(), -10, 10).numpy()
+    if pred.ndim > 1:
+        pred = pred[:, 0]
+    plt.plot(pred, 'b', label='Free-running predicted signal')
+    
+    plt.title('Target and generated signals $y(n)$ starting at $n=0$')
+    plt.legend()
+    
+    plt.figure(2)
+    plt.clf()
+    plt.plot(X[0:20, 0:200].T.numpy())
+    plt.title('Some reservoir activations $\\mathbf{x}(n)$')
+    
+    plt.figure(3)
+    plt.clf()
+    if args.opt == 'lr':
+        w = model.numpy().squeeze()
+        plt.bar(range(len(w)), w)
+        plt.title('Output weights $\\mathbf{W}^{out}$')
+    elif args.read_out == 'linear':
+        w = model.linear.weight.detach().numpy()
+        if w.ndim > 1:
+            w = np.mean(w, axis=0)  # average over output neurons if necessary
+        else:
+            w = w.squeeze()
+        plt.bar(range(len(w)), w)
+        plt.title('Output weights $\\mathbf{W}^{out}$')
+    
+    plt.show()
 
-    show()
+
+
 
 def plot_geometric_graph(G):
     # position is stored as node attribute data for random_geometric_graph

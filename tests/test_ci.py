@@ -51,12 +51,12 @@ class TestModelErrorRegression(unittest.TestCase):
             "--opt", "lr",
             "--top", "uniform",
             "--dim-res", "1000",
-            "--rho", "0.01",       # reservoir density
-            "--alpha", "0.3",      # reservoir leak rate
-            "--rest",             # enable reservoir spectral radius estimation
-            "--read-out", "linear",# linear read-out architecture
-            "--valve-in", "1000",  # input valve size
-            "--valve-out", "1000", # output valve size
+            "--rho", "0.01",        # reservoir density
+            "--alpha", "0.3",       # reservoir leak rate
+            "--rest",               # enable reservoir spectral radius estimation
+            "--read-out", "linear", # linear read-out architecture
+            "--valve-in", "1000",   # input valve size
+            "--valve-out", "1000",  # output valve size
             "--dim-in", "1",
             "--dim-out", "1",
             "--device", "cpu"
@@ -74,17 +74,38 @@ class TestModelErrorRegression(unittest.TestCase):
             "--epochs", "1000",
             "--top", "uniform",
             "--dim-res", "1000",
-            "--rho", "0.01",       # reservoir density
-            "--alpha", "0.3",      # reservoir leak rate
-            "--rest",             # enable reservoir spectral radius estimation
-            "--read-out", "linear",# linear read-out architecture
-            "--valve-in", "1000",  # input valve size
-            "--valve-out", "1000", # output valve size
+            "--rho", "0.01",        # reservoir density
+            "--alpha", "0.3",       # reservoir leak rate
+            "--rest",               # enable reservoir spectral radius estimation
+            "--read-out", "linear", # linear read-out architecture
+            "--valve-in", "1000",   # input valve size
+            "--valve-out", "1000",  # output valve size
             "--dim-in", "1",
             "--dim-out", "1",
             "--device", "cpu"
         ]
-        expected_threshold = 0.02
+        expected_threshold = 0.02 # Training with Gradient Descent converges slower.
+        self._run_experiment(test_args, expected_threshold)
+
+    def test_llm_input(self):
+        test_args = [
+            "sparse_reservoir.py",
+            "--fp", "32",
+            "--lr", "0.01",
+            "--opt", "adam",
+            "--epochs", "1000",
+            "--top", "uniform",
+            "--dim-res", "1000",
+            "--rho", "0.01",        # reservoir density
+            "--alpha", "0.3",       # reservoir leak rate
+            "--rest",               # enable reservoir spectral radius estimation
+            "--read-out", "linear", # linear read-out architecture
+            "--valve-in", "1000",   # input valve size
+            "--valve-out", "1000",  # output valve size
+            "--device", "cpu",
+            "--use-wiki"
+        ]
+        expected_threshold = 0.3 # Higher threshold due to time constraints, simply check if it works.
         self._run_experiment(test_args, expected_threshold)
 
 if __name__ == '__main__':
