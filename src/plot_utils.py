@@ -51,14 +51,16 @@ def plot_results(data, Y, X, model, in_size, r_out_size, trainLen, testLen, args
     plt.clf()
     if args.opt == 'lr':
         w = model.numpy().squeeze()
+        plt.bar(range(len(w)), w)
+        plt.title('Output weights $\\mathbf{W}^{out}$')
     elif args.read_out == 'linear':
         w = model.linear.weight.detach().numpy()
         if w.ndim > 1:
             w = np.mean(w, axis=0)  # average over output neurons if necessary
         else:
             w = w.squeeze()
-    plt.bar(range(len(w)), w)
-    plt.title('Output weights $\\mathbf{W}^{out}$')
+        plt.bar(range(len(w)), w)
+        plt.title('Output weights $\\mathbf{W}^{out}$')
     
     plt.show()
 
