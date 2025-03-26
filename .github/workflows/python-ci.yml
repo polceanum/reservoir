@@ -20,8 +20,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Create and activate a temporary Conda environment
-      - name: Create and Activate Conda Environment
+      # For GitHub-hosted runners: use system Python and pip instead of conda
+      - name: Setup Python and Install Dependencies (GitHub-Hosted)
+        if: ${{ matrix.os != 'self-hosted' }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Unit Tests (GitHub-Hosted)
+        if: ${{ matrix.os != 'self-hosted' }}
+        run: |
+          python -m unittest discover tests
+
+      # Existing self-hosted configuration
+      - name: Create and Activate Conda Environment (Self-hosted)
+        if: ${{ matrix.os == 'self-hosted' }}
         shell: bash -l {0}
         run: |
           source $(conda info --base)/etc/profile.d/conda.sh  # Dynamically source Conda initialization
@@ -29,18 +42,17 @@ jobs:
           conda activate temp-ci-env
           pip install -r requirements.txt
 
-      # Run Unit Tests
-      - name: Run Unit Tests
+      - name: Run Unit Tests (Self-hosted)
+        if: ${{ matrix.os == 'self-hosted' }}
         shell: bash -l {0}
         run: |
           source $(conda info --base)/etc/profile.d/conda.sh  # Dynamically source Conda initialization
           conda activate temp-ci-env
           python -m unittest discover tests
 
-      # Clean up the temporary Conda environment
-      - name: Remove Temporary Conda Environment
-        if: always()
+      - name: Remove Temporary Conda Environment (Self-hosted)
+        if: ${{ matrix.os == 'self-hosted' }}
         shell: bash -l {0}
         run: |
-          source $(conda info --base)/etc/profile.d/conda.sh  # Dynamically source Conda initialization
+          source $(conda info --base)/etc/profile.d/conda.sh
           conda remove -n temp-ci-env --all -y
