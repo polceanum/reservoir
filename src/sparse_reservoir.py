@@ -9,6 +9,10 @@ from tqdm import tqdm
 
 from plot_utils import plot_results, plot_power_law, plot_geometric_graph
 
+# New imports for Wikipedia dataset and pretrained embeddings
+from datasets import load_dataset
+from transformers import AutoTokenizer, AutoModel
+
 # --------------------------
 # Neural Network Definitions
 # --------------------------
@@ -40,12 +44,30 @@ class SimpleTransformerModel(nn.Module):
         return self.fc2(x)
 
 # --------------------------
+# Wikipedia Data Loader with Pretrained Embeddings
+# --------------------------
+def load_wikipedia_data(tokenizer, model, max_length=128, num_samples=1000):
+    """
+    Loads a subset of the Wikipedia dataset and converts texts to embeddings.
+    Uses mean pooling over the last hidden states.
+    """
+    # Load a small subset for speed (adjust the split as needed)
+    dataset = load_dataset("wikipedia", "20220301.en", split=f"train[:{num_samples}]")
+    texts = [sample["text"] for sample in dataset]
+    # Tokenize the texts
+    inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    # Mean-pool the last hidden state to get a single embedding per sample
+    embeddings = outputs.last_hidden_state.mean(dim=1)
+    return embeddings
+
+# --------------------------
 # Data and Helper Functions
 # --------------------------
 def load_data(file_path, dtype, device):
     data = np.loadtxt(file_path)
     return torch.tensor(data, dtype=dtype, device=device)
-
 
 def estimate_power_law(x, y):
     log_x = np.log(x)
@@ -55,7 +77,6 @@ def estimate_power_law(x, y):
     b = model.coef_[0]
     a = np.exp(model.intercept_)
     return a, b
-
 
 def initialize_reservoir(resSize, density, topology, dtype, device, csr=True, allow_plot=False):
     tensor_func = {torch.float16: torch.HalfTensor, torch.float32: torch.FloatTensor, torch.float64: torch.DoubleTensor}
@@ -84,7 +105,6 @@ def initialize_reservoir(resSize, density, topology, dtype, device, csr=True, al
         W_sparse = W_sparse.to_sparse_csr()
     return W_sparse
 
-
 def estimate_rho(resSize, density, topology, dtype, device, allow_plot=False):
     print('Estimating rho for reservoir of size', resSize, '...')
     x = np.array([1000, 1250, 1500, 1750, 2000], dtype=int)
@@ -105,7 +125,6 @@ def estimate_rho(resSize, density, topology, dtype, device, allow_plot=False):
         plot_power_law(xs, ys, a, b)
     return rho
 
-
 def initialize_weights_sparse(resSize, inSize, inInterSize, density, topology, dtype, device, rho=None, allow_plot=True):
     Win = (torch.rand(inInterSize, 1 + inSize, dtype=dtype, device=device) - 0.5)
     W_sparse = initialize_reservoir(resSize, density, topology, dtype, device, allow_plot=allow_plot)
@@ -116,20 +135,19 @@ def initialize_weights_sparse(resSize, inSize, inInterSize, density, topology, d
     W_sparse = W_sparse * (1.25 / rhoW)
     return Win, W_sparse
 
-
 def run_reservoir_sparse(data, Win, W_sparse, trainLen, initLen, resSize, a, inSize, dtype, device):
     X = torch.zeros((1 + inSize + resSize, trainLen - initLen), dtype=dtype, device=device)
     x = torch.zeros((resSize, 1), dtype=dtype, device=device)
-    # Precompute constant tensors outside the loop
-    Win_padding = torch.zeros((resSize - Win.shape[0], Win.shape[1] - 1), dtype=dtype, device=device)
+    # Precompute constant tensors outside the loop. Create padding with shape (resSize - Win.shape[0], 1)
+    Win_padding = torch.zeros((resSize - Win.shape[0], 1), dtype=dtype, device=device)
     one = torch.tensor([1.0], dtype=dtype, device=device)
     for t in tqdm(range(trainLen)):
         u = data[t]
-        Win_out = Win @ torch.vstack((one, u.view(1, 1)))
+        Win_out = Win @ torch.vstack((one, u.view(-1, 1)))
         Win_out = torch.cat([Win_out, Win_padding])
         x = (1 - a) * x + a * torch.tanh(Win_out + W_sparse @ x)
         if t >= initLen:
-            X[:, t - initLen] = torch.vstack((one, u.view(1, 1), x))[:, 0]
+            X[:, t - initLen] = torch.vstack((one, u.view(-1, 1), x))[:, 0]
     print('Reservoir run complete.')
     return X, x
 
@@ -141,7 +159,6 @@ def train_output(X, Yt, input_size, r_out_size, reg, dtype, device):
         X = X[:1 + input_size + r_out_size]
     identity_matrix = torch.eye(X.shape[0], dtype=dtype, device=device)
     return torch.linalg.solve(X @ X.T + reg * identity_matrix, X @ Yt)
-
 
 def train_output_with_gd(X, Yt, input_size, r_out_size, learning_rate, epochs, args, dtype, device):
     if X.shape[0] < 1 + input_size + r_out_size:
@@ -180,7 +197,6 @@ def train_output_with_gd(X, Yt, input_size, r_out_size, learning_rate, epochs, a
             print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.8f}')
     return model
 
-
 def run_generative_mode(data, model, Win, W, r_out_size, testLen, trainLen, a, initial_x, args, inSize, outSize, dtype, device):
     Y = torch.zeros((outSize, testLen), dtype=dtype, device=device)
     one = torch.tensor([1.0], dtype=dtype, device=device)
@@ -189,24 +205,27 @@ def run_generative_mode(data, model, Win, W, r_out_size, testLen, trainLen, a, i
     win_padding = torch.zeros((pad_rows, 1), dtype=dtype, device=device)
 
     u = data[trainLen]
-    x = initial_x
     for t in range(testLen):
-        Win_out = Win @ torch.vstack((one, u.view(1, 1)))
+        Win_out = Win @ torch.vstack((one, u.view(-1, 1)))
         Win_out = torch.cat([Win_out, win_padding])
-        x = (1 - a) * x + a * torch.tanh(Win_out + W @ x)
-        input_to_model = torch.vstack((one, u.view(1, 1), x[:r_out_size])).T.flatten()
+        x = (1 - a) * initial_x + a * torch.tanh(Win_out + W @ initial_x)
+        # Concatenate one, input u, and reservoir state (truncated to r_out_size)
+        input_to_model = torch.vstack((one, u.view(-1, 1), x[:r_out_size])).T.flatten()
         if args.opt == 'lr':
             y = model.T @ input_to_model
         else:
             y = model(input_to_model.view(1, -1)).view(-1)
         Y[:, t] = y
         u = y
+        initial_x = x  # update the reservoir state
     return Y
 
-
 def compute_mse(data, Y, trainLen, errorLen):
-    return torch.mean((data[trainLen + 1:trainLen + errorLen + 1] - Y[0, :errorLen]) ** 2).item()
-
+    # Handle multi-dimensional targets (e.g., when using Wikipedia embeddings)
+    target = data[trainLen + 1: trainLen + errorLen + 1]
+    if target.dim() > 1:
+        target = target.T  # shape now (embedding_dim, errorLen)
+    return torch.mean((target - Y[:, :errorLen]) ** 2).item()
 
 # --------------------------
 # Main Function
@@ -216,6 +235,8 @@ def main():
 
     # Data file path
     parser.add_argument('--data-file', type=str, default='../data/MackeyGlass_t17.txt', help='Path to data file')
+    # New flag to use Wikipedia dataset with pretrained embeddings
+    parser.add_argument('--use-wiki', action='store_true', help='Use Wikipedia dataset with pretrained embeddings')
 
     # Training options
     parser.add_argument('--fp', type=int, default=64, choices=[16, 32, 64], help='float precision')
@@ -238,8 +259,8 @@ def main():
     parser.add_argument('--valve-out', type=int, default=1000, help='output valve size')
 
     # Data dimensions
-    parser.add_argument('--dim-in', type=int, default=1, help='input size')
-    parser.add_argument('--dim-out', type=int, default=1, help='output size')
+    parser.add_argument('--dim-in', type=int, default=1, help='input size (ignored if --use-wiki is set)')
+    parser.add_argument('--dim-out', type=int, default=1, help='output size (ignored if --use-wiki is set)')
 
     # Visualization
     parser.add_argument('--viz', action='store_true', help='plot reservoir information')
@@ -254,23 +275,37 @@ def main():
     device = torch.device(args.device)
 
     torch.manual_seed(42)
-    inSize = args.dim_in
-    outSize = args.dim_out
+    dtype = {64: torch.float64, 32: torch.float32, 16: torch.float16}[args.fp]
+
+    # Load data: either from file or Wikipedia dataset with pretrained embeddings.
+    if args.use_wiki:
+        print("Loading Wikipedia dataset with pretrained embeddings...")
+        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+        model_emb = AutoModel.from_pretrained("bert-base-uncased").to(device).to(dtype)
+        model_emb.eval()
+        # Load a subset (here 5000 samples; adjust as needed)
+        data = load_wikipedia_data(tokenizer, model_emb, max_length=128, num_samples=1000).to(dtype=dtype, device=device)
+        # Set input and output dimensions to match the embedding size (typically 768 for BERT)
+        inSize = data.shape[1]
+        outSize = data.shape[1]
+    else:
+        data = load_data(args.data_file, dtype, device)
+        inSize = args.dim_in
+        outSize = args.dim_out
+
     resSize = args.dim_res
     a = args.alpha
     reg = 1e-8
-    trainLen = 2000
-    testLen = 2000
+    # Adjust trainLen, testLen, etc. For Wikipedia, ensure there are enough samples.
+    trainLen = 2000 if not args.use_wiki else min(500, data.shape[0]-1)
+    testLen = 2000 if not args.use_wiki else min(400, data.shape[0]-1)
     initLen = 100
-    errorLen = 500
+    errorLen = 500 if not args.use_wiki else min(100, data.shape[0]-initLen-1)
     learning_rate = args.lr
     epochs = args.epochs
     density = args.rho
     inInterSize = args.valve_in
     outInterSize = args.valve_out
-    dtype = {64: torch.float64, 32: torch.float32, 16: torch.float16}[args.fp]
-
-    data = load_data(args.data_file, dtype, device)
 
     rho_value = (estimate_rho(resSize, density, args.top, dtype, device, allow_plot=args.viz)
                  if args.rest else None)
@@ -297,7 +332,13 @@ def main():
     else:
         X, final_x_state = run_reservoir_sparse(data, Win, W, trainLen, initLen, resSize, a, inSize, dtype, device)
 
-    Yt = data[initLen + 1: trainLen + 1].clone().detach().to(dtype=dtype, device=device).view(-1, 1)
+    # Prepare target outputs.
+    Yt = data[initLen + 1: trainLen + 1].clone().detach().to(dtype=dtype, device=device)
+    if Yt.ndim == 1:
+        Yt = Yt.unsqueeze(1)
+    # For multi-dimensional data (e.g. Wikipedia embeddings), ensure Yt is of shape (trainLen - initLen, outSize)
+    if Yt.dim() > 1 and Yt.shape[1] != outSize:
+        Yt = Yt.view(-1, outSize)
 
     # --------------------------
     # Profile Readout Training (if enabled)
