@@ -20,17 +20,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # For non-self-hosted runners, set up Miniconda
-      - name: Setup Miniconda Environment (Non-Self-Hosted)
-        if: ${{ matrix.os != 'self-hosted' }}
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          python-version: 3.10
-          activate-environment: false
-
-      # Create and Activate Conda Environment
-      - name: Create and Activate Conda Environment (Self-hosted)
-        if: ${{ matrix.os == 'self-hosted' }}
+      # Create and activate a temporary Conda environment
+      - name: Create and Activate Conda Environment
         shell: bash -l {0}
         run: |
           source $(conda info --base)/etc/profile.d/conda.sh  # Dynamically source Conda initialization
@@ -38,35 +29,18 @@ jobs:
           conda activate temp-ci-env
           pip install -r requirements.txt
 
-      - name: Create and Activate Conda Environment (Non-Self-Hosted)
-        if: ${{ matrix.os != 'self-hosted' }}
-        run: |
-          conda create -n temp-ci-env python=3.10 -y
-          conda run -n temp-ci-env pip install -r requirements.txt
-
       # Run Unit Tests
-      - name: Run Unit Tests (Self-hosted)
-        if: ${{ matrix.os == 'self-hosted' }}
+      - name: Run Unit Tests
         shell: bash -l {0}
         run: |
           source $(conda info --base)/etc/profile.d/conda.sh  # Dynamically source Conda initialization
           conda activate temp-ci-env
           python -m unittest discover tests
 
-      - name: Run Unit Tests (Non-Self-Hosted)
-        if: ${{ matrix.os != 'self-hosted' }}
-        run: |
-          conda run -n temp-ci-env python -m unittest discover tests
-
       # Clean up the temporary Conda environment
-      - name: Remove Temporary Conda Environment (Self-hosted)
-        if: ${{ matrix.os == 'self-hosted' }}
+      - name: Remove Temporary Conda Environment
+        if: always()
         shell: bash -l {0}
         run: |
           source $(conda info --base)/etc/profile.d/conda.sh  # Dynamically source Conda initialization
           conda remove -n temp-ci-env --all -y
-
-      - name: Remove Temporary Conda Environment (Non-Self-Hosted)
-        if: ${{ matrix.os != 'self-hosted' }}
-        run: |
-          conda env remove -n temp-ci-env -y
