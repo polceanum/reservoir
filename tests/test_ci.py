@@ -91,7 +91,8 @@ class TestReservoir(unittest.TestCase):
             "--valve-in", "1000",
             "--valve-out", "1000",
             "--device", "cpu",
-            "--dataset", "wikipedia"
+            "--dataset", "wikipedia",
+            "--embedding-model", "prajjwal1/bert-tiny"
         ]
         expected_threshold = 0.3
         self._run_experiment(test_args, expected_threshold)
