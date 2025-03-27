@@ -73,8 +73,6 @@ class TestReservoir(unittest.TestCase):
         expected_threshold = 0.02
         self._run_experiment(test_args, expected_threshold)
 
-    # This test is only run on self-hosted runners because the Wikipedia dataset is too large for GitHub-hosted runners.
-    @unittest.skipUnless("self-hosted" in os.environ.get("GITHUB_RUNNER_LABELS", ""), "Test only runs on self-hosted runners")
     def test_error_llm_input(self):
         test_args = [
             "sparse_reservoir.py",
@@ -91,7 +89,8 @@ class TestReservoir(unittest.TestCase):
             "--valve-in", "1000",
             "--valve-out", "1000",
             "--device", "cpu",
-            "--dataset", "wikipedia"
+            "--dataset", "wikipedia",
+            "--embedding-model", "prajjwal1/bert-tiny"
         ]
         expected_threshold = 0.3
         self._run_experiment(test_args, expected_threshold)

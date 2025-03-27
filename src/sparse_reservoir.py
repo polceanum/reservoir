@@ -272,6 +272,11 @@ def main():
     # Enable pytorch profiler option
     parser.add_argument('--profile', action='store_true', help='Enable PyTorch profiling for reservoir and readout training')
 
+    # Add new argument for embedding model selection
+    parser.add_argument('--embedding-model', type=str, default='bert-base-uncased', 
+                        choices=['bert-base-uncased', 'distilbert-base-uncased', 'prajjwal1/bert-tiny'],
+                        help='Pretrained embeddings model to use; choose a light model for fast iteration')
+
     args = parser.parse_args()
     device = torch.device(args.device)
 
@@ -280,9 +285,9 @@ def main():
 
     # Load data: load Wikipedia data if dataset is wikipedia, else load timeseries data.
     if args.dataset == "wikipedia":
-        print("Loading Wikipedia dataset with pretrained embeddings...")
-        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-        model_emb = AutoModel.from_pretrained("bert-base-uncased").to(device).to(dtype)
+        print("Loading Wikipedia dataset with pretrained embeddings using", args.embedding_model, "...")
+        tokenizer = AutoTokenizer.from_pretrained(args.embedding_model)
+        model_emb = AutoModel.from_pretrained(args.embedding_model).to(device).to(dtype)
         model_emb.eval()
         data = load_wikipedia_data(tokenizer, model_emb, max_length=128, num_samples=1000).to(dtype=dtype, device=device)
         # Set input and output dimensions to match the embedding size (typically 768 for BERT)

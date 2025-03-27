@@ -35,11 +35,14 @@ def plot_results(data, Y, X, model, in_size, r_out_size, trainLen, testLen, args
     
     # Process predicted signal: if multidimensional, use the first column
     pred = torch.clip(Y.T.detach(), -10, 10).numpy()
+    note = ''
     if pred.ndim > 1:
+        num_cols = pred.shape[1]
         pred = pred[:, 0]
+        note = ' (only first column shown out of {})'.format(num_cols)
     plt.plot(pred, 'b', label='Free-running predicted signal')
     
-    plt.title('Target and generated signals $y(n)$ starting at $n=0$')
+    plt.title('Target and generated signals $y(n)$ starting at $n=0$'+note)
     plt.legend()
     
     plt.figure(2)
