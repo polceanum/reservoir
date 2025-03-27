@@ -52,7 +52,7 @@ def load_wikipedia_data(tokenizer, model, max_length=128, num_samples=1000):
     Uses mean pooling over the last hidden states.
     """
     # Load a small subset for speed (adjust the split as needed)
-    dataset = load_dataset("wikipedia", "20220301.en", split=f"train[:{num_samples}]")
+    dataset = load_dataset("wikipedia", "20220301.en", split=f"train[:{num_samples}]", trust_remote_code=True)
     texts = [sample["text"] for sample in dataset]
     # Tokenize the texts
     inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
