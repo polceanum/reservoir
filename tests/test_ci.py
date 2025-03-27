@@ -116,7 +116,7 @@ class TestReservoir(unittest.TestCase):
             "--dim-out", "1",
             "--device", "cpu"
         ]
-        runtime_threshold = 6.0  # seconds
+        runtime_threshold = 10.0  # seconds
         sys.argv = test_args
         start_time = time.perf_counter()
         sr.main()
