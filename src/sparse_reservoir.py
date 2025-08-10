@@ -44,23 +44,39 @@ class SimpleTransformerModel(nn.Module):
         return self.fc2(x)
 
 # --------------------------
-# Wikipedia Data Loader with Pretrained Embeddings
+# Wikipedia Data Loader with Token-Level Embeddings (Multiple Samples)
 # --------------------------
-def load_wikipedia_data(tokenizer, model, max_length=128, num_samples=1000):
+def load_wikipedia_data_token_level(tokenizer, model, max_length=128, num_samples=5, combine_samples=True):
     """
-    Loads a subset of the Wikipedia dataset and converts texts to embeddings.
-    Uses mean pooling over the last hidden states.
+    Loads multiple samples from the Wikipedia dataset and converts texts to token-level embeddings.
+    
+    Parameters:
+      - tokenizer: the Hugging Face tokenizer.
+      - model: the pretrained embedding model.
+      - max_length: maximum token length for each sample.
+      - num_samples: number of samples to load.
+      - combine_samples: if True, concatenates token embeddings from all samples into a single sequence.
+    
+    Returns:
+      If combine_samples is True, returns a tensor of shape (total_seq_length, embed_dim).  
+      Otherwise, returns a list of tensors (one per sample).
     """
-    # Load a small subset for speed (adjust the split as needed)
     dataset = load_dataset("wikipedia", "20220301.en", split=f"train[:{num_samples}]", trust_remote_code=True)
     texts = [sample["text"] for sample in dataset]
-    # Tokenize the texts
-    inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
-    with torch.no_grad():
-        outputs = model(**inputs)
-    # Mean-pool the last hidden state to get a single embedding per sample
-    embeddings = outputs.last_hidden_state.mean(dim=1)
-    return embeddings
+    embeddings_list = []
+    for text in texts:
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=max_length)
+        with torch.no_grad():
+            outputs = model(**inputs)
+        # outputs.last_hidden_state: shape (1, seq_length, hidden_dim)
+        emb = outputs.last_hidden_state.squeeze(0)  # shape: (seq_length, embed_dim)
+        embeddings_list.append(emb)
+    if combine_samples:
+        # Concatenate along the time dimension to form one long sequence.
+        embeddings = torch.cat(embeddings_list, dim=0)
+        return embeddings
+    else:
+        return embeddings_list
 
 # --------------------------
 # Data and Helper Functions
@@ -220,11 +236,40 @@ def run_generative_mode(data, model, Win, W, r_out_size, testLen, trainLen, a, i
         initial_x = x  # update the reservoir state
     return Y
 
+# Helper function to decode a sequence of token embeddings using cosine similarity
+def decode_generated_text(Y, tokenizer, model_emb, device):
+    """
+    Y is assumed to be of shape (seq_length, embed_dim)
+    """
+    # Get expected embedding dimension from the model's input embeddings
+    expected_dim = model_emb.get_input_embeddings().weight.size(1)
+    
+    # Ensure Y is 2D with shape (seq_length, embed_dim)
+    if Y.dim() == 1:
+        Y = Y.unsqueeze(0)
+    if Y.shape[-1] != expected_dim:
+        if Y.shape[0] == expected_dim:
+            Y = Y.transpose(0, 1)
+        else:
+            raise ValueError(f"Expected embedding dimension {expected_dim}, but got Y shape {Y.shape}")
+    
+    # Normalize Y and the token embeddings
+    Y_norm = torch.nn.functional.normalize(Y, p=2, dim=1)
+    token_emb = model_emb.get_input_embeddings().weight.to(device)
+    token_emb_norm = torch.nn.functional.normalize(token_emb, p=2, dim=1)
+    
+    # Compute cosine similarity (seq_length, vocab_size)
+    cosine_sim = torch.matmul(Y_norm, token_emb_norm.t())
+    token_ids = torch.argmax(cosine_sim, dim=1)
+    
+    decoded_text = tokenizer.decode(token_ids.tolist(), clean_up_tokenization_spaces=True)
+    return decoded_text
+
 def compute_mse(data, Y, trainLen, errorLen):
-    # Handle multi-dimensional targets (e.g., when using Wikipedia embeddings)
+    # For token-level data, target is taken from the tokens following the training sequence.
     target = data[trainLen + 1: trainLen + errorLen + 1]
     if target.dim() > 1:
-        target = target.T  # shape now (embedding_dim, errorLen)
+        target = target.T  # shape now (embed_dim, errorLen)
     return torch.mean((target - Y[:, :errorLen]) ** 2).item()
 
 # --------------------------
@@ -272,10 +317,17 @@ def main():
     # Enable pytorch profiler option
     parser.add_argument('--profile', action='store_true', help='Enable PyTorch profiling for reservoir and readout training')
 
-    # Add new argument for embedding model selection
+    # Embedding model selection (for Wikipedia)
     parser.add_argument('--embedding-model', type=str, default='bert-base-uncased', 
                         choices=['bert-base-uncased', 'distilbert-base-uncased', 'prajjwal1/bert-tiny'],
                         help='Pretrained embeddings model to use; choose a light model for fast iteration')
+
+    # Sample output flag for Wikipedia
+    parser.add_argument('--sample-output', action='store_true', help='Generate sample text output prediction for Wikipedia dataset')
+
+    # New argument: number of Wikipedia samples to load
+    parser.add_argument('--num-samples', type=int, default=5,
+                        help='Number of Wikipedia samples to load (set according to model capabilities)')
 
     args = parser.parse_args()
     device = torch.device(args.device)
@@ -283,29 +335,44 @@ def main():
     torch.manual_seed(42)
     dtype = {64: torch.float64, 32: torch.float32, 16: torch.float16}[args.fp]
 
-    # Load data: load Wikipedia data if dataset is wikipedia, else load timeseries data.
+    # Load data
     if args.dataset == "wikipedia":
         print("Loading Wikipedia dataset with pretrained embeddings using", args.embedding_model, "...")
         tokenizer = AutoTokenizer.from_pretrained(args.embedding_model)
         model_emb = AutoModel.from_pretrained(args.embedding_model).to(device).to(dtype)
         model_emb.eval()
-        data = load_wikipedia_data(tokenizer, model_emb, max_length=128, num_samples=1000).to(dtype=dtype, device=device)
-        # Set input and output dimensions to match the embedding size (typically 768 for BERT)
+        # Load multiple samples and combine them into one long token sequence.
+        data = load_wikipedia_data_token_level(tokenizer, model_emb, max_length=128, num_samples=args.num_samples, combine_samples=True)
+        data = data.to(dtype=dtype, device=device)
+        # Check that the input data is token-level.
+        if data.dim() != 2:
+            raise ValueError(f"Input data is not token-level. Expected 2 dimensions, got {data.dim()}.")
+        expected_dim = model_emb.get_input_embeddings().weight.size(1)
+        if data.size(1) != expected_dim:
+            raise ValueError(f"Token embedding dimension mismatch: got {data.size(1)}, expected {expected_dim}.")
+        print(f"Input data shape is {data.shape} (token-level).")
+
+        # For token-level embeddings, each time-step is a token.
         inSize = data.shape[1]
         outSize = data.shape[1]
+        # Adjust train/test parameters based on sequence length.
+        L = data.shape[0]
+        trainLen = int(0.8 * L) - 1  # leave room for target tokens
+        testLen = L - trainLen - 1
+        initLen = max(1, int(0.2 * trainLen))
+        errorLen = testLen
     else:
         data = load_data(args.data_file, dtype, device)
         inSize = args.dim_in
         outSize = args.dim_out
+        trainLen = 2000
+        testLen = 2000
+        initLen = 100
+        errorLen = 500
 
     resSize = args.dim_res
     a = args.alpha
     reg = 1e-8
-    # Adjust trainLen, testLen, etc. For Wikipedia, ensure there are enough samples.
-    trainLen = 2000 if args.dataset == "timeseries" else min(500, data.shape[0]-1)
-    testLen = 2000 if args.dataset == "timeseries" else min(400, data.shape[0]-1)
-    initLen = 100
-    errorLen = 500 if args.dataset == "timeseries" else min(100, data.shape[0]-initLen-1)
     learning_rate = args.lr
     epochs = args.epochs
     density = args.rho
@@ -341,10 +408,9 @@ def main():
     Yt = data[initLen + 1: trainLen + 1].clone().detach().to(dtype=dtype, device=device)
     if Yt.ndim == 1:
         Yt = Yt.unsqueeze(1)
-    # For multi-dimensional data (e.g. Wikipedia embeddings), ensure Yt is of shape (trainLen - initLen, outSize)
     if Yt.dim() > 1 and Yt.shape[1] != outSize:
         Yt = Yt.view(-1, outSize)
-
+    
     # --------------------------
     # Profile Readout Training (if enabled)
     # --------------------------
@@ -376,6 +442,14 @@ def main():
                             args, inSize, outSize, dtype, device)
     mse = compute_mse(data, Y, trainLen, errorLen)
     print('MSE =', mse)
+    
+    # Combined sanity check and sample text output decoding (Wikipedia only) using decode_generated_text
+    if args.dataset == "wikipedia" and args.sample_output:
+        target_text = decode_generated_text(Yt, tokenizer, model_emb, device)
+        print("\n\nSanity check - target text (decoded entire target):", target_text)
+        sample_text = decode_generated_text(Y, tokenizer, model_emb, device)
+        print("\n\nSample text output prediction:", sample_text)
+    
     if args.viz:
         plot_results(data, Y, X, model, inSize, outInterSize, trainLen, testLen, args)
 
